@@ -1,2 +1,2 @@
-# Problem-Recommender
+# Event Management
 Hackathon Project
