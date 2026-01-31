@@ -96,6 +96,14 @@ export const fetchProfile = createAsyncThunk(
   },
 );
 
+export const fetchUserProfile = createAsyncThunk(
+  "auth/fetchUserProfile",
+  async () => {
+    const response = await api.get("/users/profile/"); // or /users/me/
+    return response.data;
+  },
+);
+
 // Update profile async thunk (THIS WAS MISSING)
 export const updateProfile = createAsyncThunk(
   "auth/updateProfile",

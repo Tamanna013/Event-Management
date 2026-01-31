@@ -89,24 +89,62 @@ const ClubDetails = () => {
   const fetchClubDetails = async () => {
     try {
       setLoading(true);
-      const [clubRes, membersRes, eventsRes, docsRes, announcementsRes] =
-        await Promise.all([
-          api.get(`/clubs/${id}/`),
+      setError(null);
+
+      // Fetch club details
+      const clubRes = await api.get(`/clubs/${id}/`);
+      setClub(clubRes.data);
+      setUserRole(clubRes.data.user_role);
+
+      // Fetch related data in parallel
+      const [membersRes, eventsRes, docsRes, announcementsRes] =
+        await Promise.allSettled([
           api.get(`/clubs/${id}/members/`),
           api.get("/events/", { params: { club: id } }),
           api.get(`/clubs/${id}/documents/`),
           api.get(`/clubs/${id}/announcements/`),
         ]);
 
-      setClub(clubRes.data);
-      setMembers(membersRes.data);
-      setEvents(eventsRes.data);
-      setDocuments(docsRes.data);
-      setAnnouncements(announcementsRes.data);
-      setUserRole(clubRes.data.user_role);
+      // Handle responses
+      if (membersRes.status === "fulfilled") {
+        setMembers(membersRes.value.data);
+      } else {
+        console.warn("Failed to fetch members:", membersRes.reason);
+        setMembers([]);
+      }
+
+      if (eventsRes.status === "fulfilled") {
+        setEvents(eventsRes.value.data);
+      } else {
+        console.warn("Failed to fetch events:", eventsRes.reason);
+        setEvents([]);
+      }
+
+      if (docsRes.status === "fulfilled") {
+        setDocuments(docsRes.value.data);
+      } else {
+        console.warn("Failed to fetch documents:", docsRes.reason);
+        setDocuments([]);
+      }
+
+      if (announcementsRes.status === "fulfilled") {
+        setAnnouncements(announcementsRes.value.data);
+      } else {
+        console.warn("Failed to fetch announcements:", announcementsRes.reason);
+        setAnnouncements([]);
+      }
     } catch (error) {
-      setError("Failed to load club details");
       console.error("Error fetching club details:", error);
+
+      if (error.response?.status === 404) {
+        setError(
+          "Club not found. It may have been deleted or you don't have permission to view it.",
+        );
+      } else if (error.response?.status === 403) {
+        setError("You don't have permission to view this club.");
+      } else {
+        setError("Failed to load club details. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -125,6 +163,9 @@ const ClubDetails = () => {
     try {
       await api.post(`/clubs/${id}/invite/`, { email, role });
       setInviteDialog(false);
+      // Refresh members list
+      const membersRes = await api.get(`/clubs/${id}/members/`);
+      setMembers(membersRes.data);
     } catch (error) {
       console.error("Error inviting member:", error);
     }
@@ -151,22 +192,11 @@ const ClubDetails = () => {
       });
 
       setUploadDocumentDialog(false);
-      fetchClubDetails(); // Refresh documents
+      // Refresh documents
+      const docsRes = await api.get(`/clubs/${id}/documents/`);
+      setDocuments(docsRes.data);
     } catch (error) {
       console.error("Error uploading document:", error);
-    }
-  };
-
-  const handleCreateAnnouncement = async (title, content) => {
-    try {
-      await api.post(`/clubs/${id}/announcements/`, {
-        title,
-        content,
-        is_pinned: false,
-      });
-      fetchClubDetails(); // Refresh announcements
-    } catch (error) {
-      console.error("Error creating announcement:", error);
     }
   };
 
@@ -236,6 +266,17 @@ const ClubDetails = () => {
                   color: "white",
                 }}
               />
+              <Chip
+                label={club?.status?.toUpperCase()}
+                color={club?.status === "active" ? "success" : "warning"}
+                sx={{
+                  backgroundColor:
+                    club?.status === "active"
+                      ? "rgba(76, 175, 80, 0.2)"
+                      : "rgba(255, 152, 0, 0.2)",
+                  color: "white",
+                }}
+              />
               {userRole && (
                 <Chip
                   label={userRole.toUpperCase()}
@@ -269,40 +310,48 @@ const ClubDetails = () => {
               <ShareIcon sx={{ mr: 1 }} />
               Share Club
             </MenuItem>
-            {isClubAdmin() && (
-              <>
-                <MenuItem
-                  onClick={() => {
-                    handleMenuClose();
-                    setInviteDialog(true);
-                  }}
-                >
-                  <PersonAddIcon sx={{ mr: 1 }} />
-                  Invite Member
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    handleMenuClose();
-                    setCreateEventDialog(true);
-                  }}
-                >
-                  <EventIcon sx={{ mr: 1 }} />
-                  Create Event
-                </MenuItem>
-                <Divider />
-                <MenuItem onClick={handleMenuClose}>
-                  <EditIcon sx={{ mr: 1 }} />
-                  Edit Club
-                </MenuItem>
-                <MenuItem
-                  onClick={handleMenuClose}
-                  sx={{ color: "error.main" }}
-                >
-                  <DeleteIcon sx={{ mr: 1 }} />
-                  Delete Club
-                </MenuItem>
-              </>
-            )}
+            {isClubAdmin() && [
+              <MenuItem
+                key="invite"
+                onClick={() => {
+                  handleMenuClose();
+                  setInviteDialog(true);
+                }}
+              >
+                <PersonAddIcon sx={{ mr: 1 }} />
+                Invite Member
+              </MenuItem>,
+              <MenuItem
+                key="event"
+                onClick={() => {
+                  handleMenuClose();
+                  setCreateEventDialog(true);
+                }}
+              >
+                <EventIcon sx={{ mr: 1 }} />
+                Create Event
+              </MenuItem>,
+              <Divider key="divider" />,
+              <MenuItem
+                key="edit"
+                onClick={() => {
+                  handleMenuClose();
+                  // Add edit functionality here
+                  console.log("Edit club clicked");
+                }}
+              >
+                <EditIcon sx={{ mr: 1 }} />
+                Edit Club
+              </MenuItem>,
+              <MenuItem
+                key="delete"
+                onClick={handleMenuClose}
+                sx={{ color: "error.main" }}
+              >
+                <DeleteIcon sx={{ mr: 1 }} />
+                Delete Club
+              </MenuItem>,
+            ]}
           </Menu>
         </Box>
       </Box>
@@ -430,7 +479,8 @@ const ClubDetails = () => {
               sx={{ borderColor: "white", color: "white" }}
               startIcon={<AnnouncementIcon />}
               onClick={() => {
-                /* Open announcement dialog */
+                // Add announcement functionality
+                console.log("Post announcement clicked");
               }}
             >
               Post Announcement
@@ -455,55 +505,90 @@ const ClubDetails = () => {
     <Grid container spacing={3}>
       <Grid item xs={12} md={8}>
         <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Members ({members.length})
-          </Typography>
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            mb={2}
+          >
+            <Typography variant="h6">Members ({members.length})</Typography>
+            {isClubAdmin() && (
+              <Button
+                variant="contained"
+                startIcon={<PersonAddIcon />}
+                onClick={() => setInviteDialog(true)}
+              >
+                Invite Member
+              </Button>
+            )}
+          </Box>
           <Divider sx={{ mb: 3 }} />
-          <List>
-            {members.map((member) => (
-              <ListItem
-                key={member.id}
-                secondaryAction={
-                  <Chip
-                    label={member.role}
-                    size="small"
-                    color={
-                      member.role === "head"
-                        ? "error"
-                        : member.role === "coordinator"
-                          ? "warning"
-                          : "default"
+          {members.length === 0 ? (
+            <Box sx={{ p: 4, textAlign: "center" }}>
+              <GroupIcon
+                sx={{ fontSize: 48, color: "text.secondary", mb: 2 }}
+              />
+              <Typography color="text.secondary">No members yet</Typography>
+              {isClubAdmin() && (
+                <Button
+                  variant="outlined"
+                  startIcon={<PersonAddIcon />}
+                  onClick={() => setInviteDialog(true)}
+                  sx={{ mt: 2 }}
+                >
+                  Invite First Member
+                </Button>
+              )}
+            </Box>
+          ) : (
+            <List>
+              {members.map((member) => (
+                <ListItem
+                  key={member.id}
+                  secondaryAction={
+                    <Chip
+                      label={member.role}
+                      size="small"
+                      color={
+                        member.role === "head"
+                          ? "error"
+                          : member.role === "coordinator"
+                            ? "warning"
+                            : "default"
+                      }
+                    />
+                  }
+                  sx={{
+                    borderBottom: "1px solid",
+                    borderColor: "divider",
+                    "&:last-child": { borderBottom: "none" },
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Avatar src={member.user?.profile_picture}>
+                      {member.user?.first_name?.[0]}
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={`${member.user?.first_name || ""} ${member.user?.last_name || ""}`}
+                    secondary={
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          {member.user?.email}
+                        </Typography>
+                        {member.joined_at && (
+                          <Typography variant="caption" color="text.secondary">
+                            Joined{" "}
+                            {format(new Date(member.joined_at), "MMM dd, yyyy")}
+                          </Typography>
+                        )}
+                      </Box>
                     }
                   />
-                }
-                sx={{
-                  borderBottom: "1px solid",
-                  borderColor: "divider",
-                  "&:last-child": { borderBottom: "none" },
-                }}
-              >
-                <ListItemAvatar>
-                  <Avatar src={member.user?.profile_picture}>
-                    {member.user?.first_name?.[0]}
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={`${member.user?.first_name} ${member.user?.last_name}`}
-                  secondary={
-                    <Box>
-                      <Typography variant="body2" color="text.secondary">
-                        {member.user?.email}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Joined{" "}
-                        {format(new Date(member.joined_at), "MMM dd, yyyy")}
-                      </Typography>
-                    </Box>
-                  }
-                />
-              </ListItem>
-            ))}
-          </List>
+                </ListItem>
+              ))}
+            </List>
+          )}
         </Paper>
       </Grid>
       <Grid item xs={12} md={4}>
@@ -512,6 +597,13 @@ const ClubDetails = () => {
             Member Statistics
           </Typography>
           <Divider sx={{ mb: 3 }} />
+
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              Total Members
+            </Typography>
+            <Typography variant="h5">{members.length}</Typography>
+          </Box>
 
           <Box sx={{ mb: 2 }}>
             <Typography variant="body2" color="text.secondary">
@@ -539,18 +631,6 @@ const ClubDetails = () => {
               {members.filter((m) => m.role === "member").length}
             </Typography>
           </Box>
-
-          {isClubAdmin() && (
-            <Button
-              fullWidth
-              variant="contained"
-              startIcon={<PersonAddIcon />}
-              onClick={() => setInviteDialog(true)}
-              sx={{ mt: 3 }}
-            >
-              Invite New Member
-            </Button>
-          )}
         </Paper>
       </Grid>
     </Grid>
@@ -566,12 +646,7 @@ const ClubDetails = () => {
           sx={{ mb: 3 }}
         >
           <Typography variant="h6">
-            Upcoming Events (
-            {
-              events.filter((e) => new Date(e.start_datetime) > new Date())
-                .length
-            }
-            )
+            Upcoming Events ({events.length})
           </Typography>
           {isClubAdmin() && (
             <Button
@@ -637,21 +712,31 @@ const ClubDetails = () => {
                 <Box display="flex" alignItems="center" gap={1} sx={{ mb: 1 }}>
                   <CalendarIcon fontSize="small" color="action" />
                   <Typography variant="body2">
-                    {format(
-                      new Date(event.start_datetime),
-                      "MMM dd, yyyy • hh:mm a",
-                    )}
+                    {event.start_datetime &&
+                      format(
+                        new Date(event.start_datetime),
+                        "MMM dd, yyyy • hh:mm a",
+                      )}
                   </Typography>
                 </Box>
-                <Box display="flex" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                  <LocationIcon fontSize="small" color="action" />
-                  <Typography variant="body2" noWrap>
-                    {event.location}
-                  </Typography>
-                </Box>
-                <Chip label={event.event_type} size="small" sx={{ mb: 2 }} />
+                {event.location && (
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={1}
+                    sx={{ mb: 2 }}
+                  >
+                    <LocationIcon fontSize="small" color="action" />
+                    <Typography variant="body2" noWrap>
+                      {event.location}
+                    </Typography>
+                  </Box>
+                )}
+                {event.event_type && (
+                  <Chip label={event.event_type} size="small" sx={{ mb: 2 }} />
+                )}
                 <Typography variant="body2" color="text.secondary">
-                  {event.description.substring(0, 100)}...
+                  {event.description?.substring(0, 100)}...
                 </Typography>
               </CardContent>
               <CardActions>
@@ -727,7 +812,8 @@ const ClubDetails = () => {
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   {doc.document_type} •{" "}
-                  {format(new Date(doc.created_at), "MMM dd, yyyy")}
+                  {doc.created_at &&
+                    format(new Date(doc.created_at), "MMM dd, yyyy")}
                 </Typography>
               </Box>
               <Button
@@ -808,10 +894,11 @@ const ClubDetails = () => {
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     By {announcement.created_by?.first_name} •{" "}
-                    {format(
-                      new Date(announcement.created_at),
-                      "MMM dd, yyyy • hh:mm a",
-                    )}
+                    {announcement.created_at &&
+                      format(
+                        new Date(announcement.created_at),
+                        "MMM dd, yyyy • hh:mm a",
+                      )}
                   </Typography>
                 </Box>
                 {isClubAdmin() && (
@@ -842,30 +929,43 @@ const ClubDetails = () => {
   );
 
   const renderError = () => (
-    <Box
-      display="flex"
-      justifyContent="center"
-      alignItems="center"
-      minHeight="60vh"
-    >
-      <Alert severity="error" sx={{ maxWidth: 600 }}>
-        <Typography variant="h6" gutterBottom>
-          Club Not Found
-        </Typography>
-        <Typography variant="body2" gutterBottom>
-          The club you're looking for doesn't exist or you don't have permission
-          to view it.
-        </Typography>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Breadcrumbs sx={{ mb: 3 }}>
         <Button
-          variant="outlined"
+          component={RouterLink}
+          to="/clubs"
           startIcon={<ArrowBackIcon />}
-          onClick={() => navigate("/clubs")}
-          sx={{ mt: 2 }}
+          sx={{ textTransform: "none" }}
         >
-          Back to Clubs
+          Clubs
         </Button>
-      </Alert>
-    </Box>
+        <Typography color="text.primary">Club Details</Typography>
+      </Breadcrumbs>
+
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="60vh"
+      >
+        <Alert severity="error" sx={{ maxWidth: 600 }}>
+          <Typography variant="h6" gutterBottom>
+            {error.includes("not found") ? "Club Not Found" : "Error"}
+          </Typography>
+          <Typography variant="body2" gutterBottom>
+            {error}
+          </Typography>
+          <Button
+            variant="outlined"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate("/clubs")}
+            sx={{ mt: 2 }}
+          >
+            Back to Clubs
+          </Button>
+        </Alert>
+      </Box>
+    </Container>
   );
 
   return (
@@ -944,20 +1044,9 @@ const ClubDetails = () => {
                     </Box>
                     <Box sx={{ mb: 2 }}>
                       <Typography variant="body2" color="text.secondary">
-                        Events This Month
+                        Upcoming Events
                       </Typography>
-                      <Typography variant="h4">
-                        {
-                          events.filter((e) => {
-                            const eventDate = new Date(e.start_datetime);
-                            const now = new Date();
-                            return (
-                              eventDate.getMonth() === now.getMonth() &&
-                              eventDate.getFullYear() === now.getFullYear()
-                            );
-                          }).length
-                        }
-                      </Typography>
+                      <Typography variant="h4">{events.length}</Typography>
                     </Box>
                     <Box>
                       <Typography variant="body2" color="text.secondary">
@@ -1005,6 +1094,7 @@ const ClubDetails = () => {
             label="Email Address"
             type="email"
             margin="normal"
+            required
           />
           <TextField
             select
@@ -1012,6 +1102,7 @@ const ClubDetails = () => {
             label="Role"
             margin="normal"
             SelectProps={{ native: true }}
+            defaultValue="member"
           >
             <option value="member">Member</option>
             <option value="coordinator">Coordinator</option>
@@ -1022,7 +1113,16 @@ const ClubDetails = () => {
           <Button onClick={() => setInviteDialog(false)}>Cancel</Button>
           <Button
             variant="contained"
-            onClick={() => handleInviteMember("test@email.com", "member")}
+            onClick={() => {
+              const emailInput = document.querySelector('input[type="email"]');
+              const roleSelect = document.querySelector("select");
+              if (emailInput?.value) {
+                handleInviteMember(
+                  emailInput.value,
+                  roleSelect?.value || "member",
+                );
+              }
+            }}
           >
             Send Invitation
           </Button>

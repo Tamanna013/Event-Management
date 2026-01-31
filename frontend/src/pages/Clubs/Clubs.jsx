@@ -56,16 +56,43 @@ const Clubs = () => {
   const fetchClubs = async () => {
     try {
       setLoading(true);
-      const params = {
-        page,
-        page_size: 12,
-        ...filters,
-      };
-      const response = await api.get("/clubs/", { params });
-      setClubs(response.data.results || response.data);
-      setTotalPages(response.data.total_pages || 1);
+      console.log("Fetching clubs...");
+
+      // Build query params properly
+      const params = new URLSearchParams();
+
+      if (filters.search) params.append("search", filters.search);
+      if (filters.type) params.append("club_type", filters.type);
+      if (filters.status) params.append("status", filters.status);
+
+      // If you want to see ALL clubs (including those you created), add this:
+      params.append("member", "true"); // This will show clubs you're a member of
+
+      // Add pagination
+      params.append("page", page);
+      params.append("page_size", 12);
+
+      console.log("Params string:", params.toString());
+
+      const response = await api.get(`/clubs/?${params.toString()}`);
+      console.log("API Response:", response);
+      console.log("Response data:", response.data);
+      console.log(
+        "Clubs count:",
+        response.data.length || response.data.results?.length,
+      );
+
+      // Handle both paginated and non-paginated responses
+      if (response.data.results) {
+        setClubs(response.data.results);
+        setTotalPages(response.data.total_pages || 1);
+      } else {
+        setClubs(response.data);
+        setTotalPages(1);
+      }
     } catch (error) {
       console.error("Error fetching clubs:", error);
+      console.error("Error response:", error.response?.data);
     } finally {
       setLoading(false);
     }
@@ -78,12 +105,31 @@ const Clubs = () => {
 
   const handleCreateClub = async (values, { setSubmitting, resetForm }) => {
     try {
-      await api.post("/clubs/", values);
+      console.log("=== CREATING CLUB ===");
+      console.log("Form values:", values);
+      console.log("User token:", localStorage.getItem("token"));
+
+      const response = await api.post("/clubs/", values);
+
+      console.log("API Response:", response);
+      console.log("Created club:", response.data);
+
       setOpenCreateDialog(false);
       resetForm();
-      fetchClubs();
+      fetchClubs(); // Refresh the list
+
+      // Show success message
+      alert("Club created successfully!");
     } catch (error) {
-      console.error("Error creating club:", error);
+      console.error("=== CLUB CREATION ERROR ===");
+      console.error("Error object:", error);
+      console.error("Error response:", error.response?.data);
+      console.error("Error status:", error.response?.status);
+
+      // Show error to user
+      alert(
+        `Error creating club: ${error.response?.data?.detail || error.message}`,
+      );
     } finally {
       setSubmitting(false);
     }

@@ -92,7 +92,6 @@ function App() {
                     />
                     <Route path="/messages" element={<Messages />} />
                     <Route path="/notifications" element={<Notifications />} />
-
                     {/* Admin Routes */}
                     <Route
                       path="/admin"
