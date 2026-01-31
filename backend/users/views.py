@@ -9,13 +9,22 @@ import random
 import string
 
 from .models import User, OTP, ClubMembership, UserActivityLog
-from .serializers import (
-    UserRegistrationSerializer, UserLoginSerializer, 
-    UserProfileSerializer, OTPRequestSerializer,
-    OTPVerifySerializer, PasswordResetSerializer,
-    UserUpdateSerializer
-)
+from .serializers import UserRegistrationSerializer, UserLoginSerializer
+from .serializers import UserProfileSerializer, UserSerializer  # Add UserSerializer
+from .serializers import OTPRequestSerializer, OTPVerifySerializer
+from .serializers import PasswordResetSerializer, UserUpdateSerializer
 from .permissions import IsAdmin, IsOrganizer
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_current_user(request):
+    from users.serializers import UserSerializer
+    serializer = UserSerializer(request.user)
+    return Response(serializer.data)
 
 class AuthViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
