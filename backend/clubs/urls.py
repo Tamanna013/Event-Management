@@ -3,8 +3,8 @@ from rest_framework.routers import DefaultRouter
 from .views import ClubViewSet, ClubInvitationViewSet
 
 router = DefaultRouter()
-router.register(r'', ClubViewSet, basename='clubs')
-router.register(r'invitations', ClubInvitationViewSet, basename='invitations')
+router.register(r'', ClubViewSet, basename='club')
+router.register(r'invitations', ClubInvitationViewSet, basename='invitation')
 
 urlpatterns = [
     path('', include(router.urls)),

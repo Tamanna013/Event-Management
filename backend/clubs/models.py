@@ -17,7 +17,6 @@ class Club(models.Model):
     STATUS_CHOICES = (
         ('active', 'Active'),
         ('inactive', 'Inactive'),
-        ('pending', 'Pending Approval'),
         ('suspended', 'Suspended'),
     )
     
@@ -28,7 +27,9 @@ class Club(models.Model):
     club_type = models.CharField(max_length=50, choices=CLUB_TYPES, default='other')
     logo = models.URLField(blank=True, null=True)
     banner_image = models.URLField(blank=True, null=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    is_public = models.BooleanField(default=True)
+    requires_approval = models.BooleanField(default=False)
     
     # Contact Information
     email = models.EmailField(blank=True, null=True)

@@ -5,8 +5,6 @@ from django.utils import timezone
 from datetime import timedelta
 import secrets
 
-# REMOVED: from streamlit import user (Incorrect import)
-
 from .models import Club, ClubInvitation, ClubAnnouncement, ClubDocument
 from .serializers import (
     ClubSerializer, ClubCreateSerializer, ClubMembershipSerializer,
@@ -20,7 +18,20 @@ class ClubViewSet(viewsets.ModelViewSet):
     queryset = Club.objects.all()
     serializer_class = ClubSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'slug'
+    
+    def create(self, request, *args, **kwargs):
+        print("=== CLUB CREATE REQUEST ===")
+        print("User:", request.user)
+        print("User ID:", request.user.id)
+        print("User role:", getattr(request.user, 'role', 'No role attribute'))
+        print("Data:", request.data)
+        
+        serializer = self.get_serializer(data=request.data)
+        print("Serializer valid:", serializer.is_valid())
+        if not serializer.is_valid():
+            print("Serializer errors:", serializer.errors)
+            
+        return super().create(request, *args, **kwargs)
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -28,30 +39,49 @@ class ClubViewSet(viewsets.ModelViewSet):
         return super().get_serializer_class()
     
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
-            return [IsOrganizer()]
-        elif self.action in ['update', 'partial_update']:
+        # For update/partial_update, require admin
+        if self.action in ['update', 'partial_update']:
             return [IsAdmin()]
-        return super().get_permissions()
+        # For destroy, require organizer
+        elif self.action in ['destroy']:
+            return [IsOrganizer()]
+        # For all other actions (including create), just require authentication
+        return [permissions.IsAuthenticated()]
     
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
-            return Club.objects.none()
+            # Show only active clubs to non-authenticated users
+            return Club.objects.filter(status='active')
 
         queryset = Club.objects.all()
 
+        # Check if user wants to see clubs they're a member of
         if self.request.query_params.get('member') == 'true':
             membership_ids = ClubMembership.objects.filter(
                 user=user,
                 role__in=['head', 'coordinator', 'member']
             ).values_list('club_id', flat=True)
             queryset = queryset.filter(id__in=membership_ids)
-
-        if user.role == 'admin':
+            return queryset  # Return clubs user is member of, regardless of status
+        # For admin users, show all clubs
+        if getattr(user, 'role', None) == 'admin':
             return queryset
 
+        # For regular users, show only active clubs
         return queryset.filter(status='active')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Add pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     @action(detail=True, methods=['get'])
     def members(self, request, slug=None):
@@ -67,8 +97,6 @@ class ClubViewSet(viewsets.ModelViewSet):
         
         serializer = ClubMembershipSerializer(memberships, many=True)
         return Response(serializer.data)
-
-    # ... (Rest of your join/invite actions are logically sound!)
     
     @action(detail=True, methods=['post'])
     def join(self, request, slug=None):
@@ -112,16 +140,7 @@ class ClubViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def approve(self, request, slug=None):
-        club = self.get_object()
-        club.status = 'active'
-        club.approved_by = request.user
-        club.approved_at = timezone.now()
-        club.save()
-        
-        return Response(
-            {'message': 'Club approved successfully.'},
-            status=status.HTTP_200_OK
-        )
+        pass
     
     @action(detail=True, methods=['post'])
     def invite(self, request, slug=None):
@@ -258,7 +277,7 @@ class ClubViewSet(viewsets.ModelViewSet):
                 {'error': 'You are not a member of this club.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
+        
 class ClubInvitationViewSet(viewsets.GenericViewSet):
     queryset = ClubInvitation.objects.all()
     serializer_class = ClubInvitationSerializer
